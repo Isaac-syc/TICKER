@@ -1,0 +1,39 @@
+# Overlay del servidor de demo: Caddy (HTTPS automático) delante de Nginx.
+# En la VM, el .env define COMPOSE_FILE=compose.yaml:compose.prod.yaml, así que basta `docker compose ...`.
+services:
+  proxy:
+    ports: !reset []
+    environment:
+      # Nginx solo confía en el X-Forwarded-For que pone Caddy para conocer la IP real.
+      TRUSTED_PROXY_CIDR: 172.30.0.10/32
+    networks: [default, edge]
+
+  caddy:
+    image: caddy:2-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN:?define DOMAIN en .env}
+    volumes:
+      - ./infra/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      edge:
+        # IP fija: es el único salto en el que Nginx confía para X-Forwarded-For.
+        ipv4_address: 172.30.0.10
+    depends_on:
+      proxy:
+        condition: service_healthy
+    restart: unless-stopped
+
+networks:
+  edge:
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24
+
+volumes:
+  caddy_data:
+  caddy_config:

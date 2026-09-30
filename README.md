@@ -126,9 +126,15 @@ Ver [ADR 0005](docs/adr/0005-ci-cd.md) para la propuesta completa y el roadmap.
   - e2e: `docker compose up --wait` y Playwright;
   - seguridad: gitleaks, pip-audit, npm audit y Trivy sobre las imágenes.
 - **`cd.yml`**:
-  - en `main`: imágenes a **GHCR** (con SBOM y provenance) y deploy automático a **staging**;
+  - en `main`: imágenes **multi-arquitectura** (amd64 + arm64, en runners nativos) a **GHCR**, con SBOM y provenance, y deploy automático a **staging**;
   - en un tag `v*`: deploy a **producción** con aprobación manual (GitHub Environments).
-  - El deploy corre `migrate` antes de actualizar la app.
+  - El deploy corre `migrate` antes de actualizar la app y termina con un smoke test.
+- **`reset-demo.yml`**: cada noche deja la demo pública como recién instalada.
+
+### Demo en línea
+
+Staging corre en una VM gratuita de Oracle Cloud (ARM) con Caddy como borde HTTPS
+(`compose.prod.yaml`). Guía paso a paso: [docs/deploy-oracle.md](docs/deploy-oracle.md).
 
 ## Variables de entorno
 

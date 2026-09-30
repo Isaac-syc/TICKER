@@ -77,6 +77,8 @@ services:
       - "${PROXY_PORT:-8080}:80"
     environment:
       CSP_SCRIPT_SRC: "'self' 'unsafe-inline'"
+      # En local Nginx es el borde y no confía en ningún proxy (ver compose.prod.yaml).
+      TRUSTED_PROXY_CIDR: 127.0.0.1/32
     volumes:
       - ./infra/nginx/default.conf.template:/etc/nginx/templates/default.conf.template:ro
     depends_on:

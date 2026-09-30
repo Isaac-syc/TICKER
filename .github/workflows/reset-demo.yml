@@ -1,0 +1,33 @@
+name: Reset demo
+
+# La demo es pública y cualquiera con las credenciales puede modificar datos: cada noche se
+# deja como recién instalada (migraciones desde cero + seed con fechas recientes).
+# Nota: GitHub pausa los workflows programados tras 60 días sin actividad en el repo.
+on:
+  schedule:
+    - cron: "0 9 * * *" # 03:00 hora del centro de México
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  reset:
+    name: Resembrar datos de la demo
+    if: vars.STAGING_URL != ''
+    runs-on: ubuntu-latest
+    concurrency:
+      group: staging
+      cancel-in-progress: false
+    environment:
+      name: staging
+      url: ${{ vars.STAGING_URL }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: Reset por SSH
+        env:
+          SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
+          SSH_HOST: ${{ secrets.STAGING_HOST }}
+        run: bash ./infra/deploy/deploy.sh reset
+      - name: Smoke test
+        run: curl -fsS --retry 10 --retry-delay 5 --retry-all-errors "${{ vars.STAGING_URL }}/api/health/ready"

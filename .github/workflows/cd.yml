@@ -1,6 +1,6 @@
 name: CD
 
-# main → imágenes en GHCR + deploy automático a staging.
+# main → imágenes multi-arquitectura en GHCR + deploy automático a staging (la demo).
 # tag v* → deploy a producción con aprobación manual (environment "production" con reviewers).
 # Los deploys solo corren cuando la variable de repo STAGING_URL / PRODUCTION_URL existe,
 # así el pipeline queda en verde (solo imágenes) mientras no haya servidor.
@@ -8,6 +8,7 @@ on:
   push:
     branches: [main]
     tags: ["v*"]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -17,13 +18,78 @@ env:
   REGISTRY: ghcr.io/${{ github.repository_owner }}
 
 jobs:
+  # Cada arquitectura se compila en un runner nativo (el ARM es gratis en repos públicos;
+  # emular arm64 con QEMU tarda varias veces más) y se publica solo por digest.
   images:
-    name: Build & push (GHCR)
+    name: Build ${{ matrix.image }} (${{ matrix.platform }})
+    strategy:
+      fail-fast: true
+      matrix:
+        image: [api, web]
+        platform: [linux/amd64, linux/arm64]
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-latest
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+          - image: api
+            context: backend
+          - image: web
+            context: frontend
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: Variables
+        run: |
+          platform='${{ matrix.platform }}'
+          echo "PLATFORM_PAIR=${platform//\//-}" >> "$GITHUB_ENV"
+          echo "IMAGE=${REGISTRY,,}/helpdesk-${{ matrix.image }}" >> "$GITHUB_ENV"
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          target: runtime
+          platforms: ${{ matrix.platform }}
+          outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=${{ matrix.image }}-${{ env.PLATFORM_PAIR }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image }}-${{ env.PLATFORM_PAIR }}
+          provenance: true
+          sbom: true
+      - name: Exportar digest
+        run: |
+          mkdir -p /tmp/digests
+          digest='${{ steps.build.outputs.digest }}'
+          touch "/tmp/digests/${digest#sha256:}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: digests-${{ matrix.image }}-${{ env.PLATFORM_PAIR }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  # Une los digests de ambas arquitecturas en un solo tag (manifest list).
+  manifest:
+    name: Manifest ${{ matrix.image }}
+    needs: images
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        image: [api, web]
     outputs:
       tag: ${{ steps.meta.outputs.version }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v4
+        with:
+          path: /tmp/digests
+          pattern: digests-${{ matrix.image }}-*
+          merge-multiple: true
+      - run: echo "IMAGE=${REGISTRY,,}/helpdesk-${{ matrix.image }}" >> "$GITHUB_ENV"
       - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3
         with:
@@ -33,66 +99,52 @@ jobs:
       - id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/helpdesk-api
+          images: ${{ env.IMAGE }}
           tags: |
             type=sha,prefix=,format=short
             type=semver,pattern={{version}}
             type=raw,value=latest,enable={{is_default_branch}}
-      - name: API
-        uses: docker/build-push-action@v6
-        with:
-          context: backend
-          target: runtime
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha,scope=api
-          cache-to: type=gha,mode=max,scope=api
-          provenance: true
-          sbom: true
-      - id: meta-web
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY }}/helpdesk-web
-          tags: |
-            type=sha,prefix=,format=short
-            type=semver,pattern={{version}}
-            type=raw,value=latest,enable={{is_default_branch}}
-      - name: Web
-        uses: docker/build-push-action@v6
-        with:
-          context: frontend
-          target: runtime
-          push: true
-          tags: ${{ steps.meta-web.outputs.tags }}
-          labels: ${{ steps.meta-web.outputs.labels }}
-          cache-from: type=gha,scope=web
-          cache-to: type=gha,mode=max,scope=web
-          provenance: true
-          sbom: true
+      - name: Crear manifest list
+        working-directory: /tmp/digests
+        run: |
+          mapfile -t tag_args < <(jq -r '.tags[] | "-t", .' <<< "$DOCKER_METADATA_OUTPUT_JSON")
+          sources=()
+          for digest in *; do sources+=("$IMAGE@sha256:$digest"); done
+          docker buildx imagetools create "${tag_args[@]}" "${sources[@]}"
+      - name: Inspeccionar
+        run: docker buildx imagetools inspect "$IMAGE:${{ steps.meta.outputs.version }}"
 
   deploy-staging:
     name: Deploy a staging
     if: github.ref == 'refs/heads/main' && vars.STAGING_URL != ''
-    needs: images
+    needs: manifest
     runs-on: ubuntu-latest
+    # Comparte grupo con el reset nocturno para que nunca corran a la vez.
+    concurrency:
+      group: staging
+      cancel-in-progress: false
     environment:
       name: staging
       url: ${{ vars.STAGING_URL }}
     steps:
       - uses: actions/checkout@v5
-      - name: Deploy por SSH (docker compose pull → migrate → up)
+      - name: Deploy por SSH (compose pull → migrate → up)
         env:
           SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
           SSH_HOST: ${{ secrets.STAGING_HOST }}
-          TAG: ${{ needs.images.outputs.tag }}
-        run: bash ./infra/deploy/deploy.sh
+          TAG: ${{ needs.manifest.outputs.tag }}
+        run: bash ./infra/deploy/deploy.sh deploy
+      - name: Smoke test
+        run: curl -fsS --retry 30 --retry-delay 5 --retry-all-errors "${{ vars.STAGING_URL }}/api/health/ready"
 
   deploy-production:
     name: Deploy a producción
     if: startsWith(github.ref, 'refs/tags/v') && vars.PRODUCTION_URL != ''
-    needs: images
+    needs: manifest
     runs-on: ubuntu-latest
+    concurrency:
+      group: production
+      cancel-in-progress: false
     environment:
       name: production # configurar "Required reviewers" en Settings → Environments
       url: ${{ vars.PRODUCTION_URL }}
@@ -102,5 +154,5 @@ jobs:
         env:
           SSH_KEY: ${{ secrets.PRODUCTION_SSH_KEY }}
           SSH_HOST: ${{ secrets.PRODUCTION_HOST }}
-          TAG: ${{ needs.images.outputs.tag }}
-        run: bash ./infra/deploy/deploy.sh
+          TAG: ${{ needs.manifest.outputs.tag }}
+        run: bash ./infra/deploy/deploy.sh deploy
