@@ -124,7 +124,7 @@ jobs:
       - uses: astral-sh/setup-uv@v6
       - name: Vulnerabilidades Python (pip-audit)
         working-directory: backend
-        run: uv export --no-dev --format requirements-txt > /tmp/req.txt && uvx pip-audit -r /tmp/req.txt
+        run: uv export --no-dev --no-emit-project --format requirements-txt > /tmp/req.txt && uvx pip-audit -r /tmp/req.txt --disable-pip
       - name: Vulnerabilidades npm
         working-directory: frontend
         run: npm audit --omit=dev --audit-level=high

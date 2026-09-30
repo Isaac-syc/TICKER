@@ -25,7 +25,8 @@ ENV NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1 \
     PORT=3000 \
     HOSTNAME=0.0.0.0
-RUN addgroup -S app && adduser -S app -G app
+# El servidor standalone solo necesita node: se quitan npm/yarn/corepack (y sus CVE vendorizados).
+RUN apk upgrade --no-cache     && rm -rf /usr/local/lib/node_modules /opt/yarn-*        /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack /usr/local/bin/yarn /usr/local/bin/yarnpkg     && addgroup -S app && adduser -S app -G app
 COPY --from=builder --chown=app:app /app/public ./public
 COPY --from=builder --chown=app:app /app/.next/standalone ./
 COPY --from=builder --chown=app:app /app/.next/static ./.next/static

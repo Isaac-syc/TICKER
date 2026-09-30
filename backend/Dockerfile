@@ -35,7 +35,9 @@ CMD ["api-dev"]
 
 # ---------- runtime: imagen final mínima, usuario sin privilegios ----------
 FROM base AS runtime
-RUN groupadd --system app && useradd --system --gid app --no-create-home app
+# Parches de seguridad del SO y sin pip: el venv de uv no lo necesita y su código vendorizado
+# (msgpack, pkg_resources) es lo único que Trivy marcaba en la imagen.
+RUN apt-get update && apt-get upgrade -y --no-install-recommends     && rm -rf /var/lib/apt/lists/*     && rm -rf /usr/local/lib/python3.13/site-packages/pip* /usr/local/bin/pip*     && groupadd --system app && useradd --system --gid app --no-create-home app
 COPY --from=builder --chown=app:app /app/.venv /app/.venv
 COPY --from=builder --chown=app:app /app/alembic.ini /app/alembic.ini
 COPY --from=builder --chown=app:app /app/migrations /app/migrations
