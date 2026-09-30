@@ -20,6 +20,8 @@ Abre **http://localhost:8080**. Al arrancar se aplican las migraciones y se carg
 | observador | `observador@helpdesk.test` | `SEED_OBSERVER_PASSWORD` |
 
 - Documentación interactiva de la API: http://localhost:8080/api/docs
+- Base de datos (HeidiSQL, DBeaver…): `127.0.0.1:5432`, base/usuario `helpdesk`, contraseña `POSTGRES_PASSWORD` del `.env`.
+  Redis (RedisInsight): `127.0.0.1:6379`. Ambos se publican solo en loopback, nunca en la red.
 - Desarrollo con recarga en caliente: `docker compose -f compose.yaml -f compose.dev.yaml up --build` (o `make dev`)
 
 ## Qué incluye

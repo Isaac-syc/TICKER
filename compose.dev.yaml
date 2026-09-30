@@ -1,16 +1,10 @@
-# Overlay de desarrollo: recarga en caliente del back y del front, puertos de BD/Redis expuestos
+# Overlay de desarrollo: recarga en caliente del back y del front, API en :8000
 # y una BD extra `helpdesk_test` para las pruebas de API.
 #   docker compose -f compose.yaml -f compose.dev.yaml up --build
 services:
   db:
-    ports:
-      - "5432:5432"
     volumes:
       - ./infra/postgres/init-test-db.sh:/docker-entrypoint-initdb.d/init-test-db.sh:ro
-
-  redis:
-    ports:
-      - "6379:6379"
 
   migrate:
     image: helpdesk/api:dev
