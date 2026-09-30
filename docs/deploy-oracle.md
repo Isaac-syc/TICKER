@@ -86,6 +86,17 @@ docker compose logs -f api        # logs JSON de la API
 cat credenciales-demo.txt         # usuarios demo
 ```
 
+## Acceso a la base de datos (HeidiSQL, DBeaver, psql)
+
+Postgres solo escucha en `127.0.0.1:5432` de la VM (nunca en internet). Se entra con un túnel SSH:
+
+```bash
+ssh -i ~/.ssh/ticker-admin -N -L 5433:127.0.0.1:5432 ubuntu@IP_DE_LA_VM
+```
+
+y el cliente se conecta a `127.0.0.1:5433`, base `helpdesk`, usuario `helpdesk`. La contraseña está en
+`POSTGRES_PASSWORD` de `/opt/helpdesk/.env`. HeidiSQL también puede abrir el túnel solo (pestaña *SSH tunnel*).
+
 ## Notas
 
 - **HTTPS es obligatorio**: la cookie del refresh token es `Secure`; Caddy obtiene y renueva el certificado solo.

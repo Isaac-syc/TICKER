@@ -1,6 +1,11 @@
 # Overlay del servidor de demo: Caddy (HTTPS automático) delante de Nginx.
 # En la VM, el .env define COMPOSE_FILE=compose.yaml:compose.prod.yaml, así que basta `docker compose ...`.
 services:
+  db:
+    # Solo en el loopback de la VM: se accede con un túnel SSH (HeidiSQL, psql), nunca desde internet.
+    ports:
+      - "127.0.0.1:5432:5432"
+
   proxy:
     ports: !reset []
     environment:
