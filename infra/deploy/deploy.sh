@@ -18,6 +18,8 @@ chmod 600 "$key_file"
 remote() {
   ssh -i "$key_file" -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=30 "$SSH_HOST" "$@"
 }
+# Los scripts remotos llegan por stdin (bash -s): cada comando docker lee de /dev/null para no
+# consumir el resto del script (docker compose run/exec leen stdin y cortarían la ejecución).
 
 case "$action" in
   deploy)
@@ -28,12 +30,12 @@ case "$action" in
 set -euo pipefail
 cd $APP_DIR
 sed -i -e 's|^REGISTRY=.*|REGISTRY=$REGISTRY|' -e 's|^TAG=.*|TAG=$TAG|' .env
-docker compose pull --quiet api web
+docker compose pull --quiet api web </dev/null
 # Migraciones primero: si fallan, la versión anterior sigue sirviendo.
-docker compose run --rm migrate
-docker compose up -d --no-build --wait --remove-orphans
-docker compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile
-docker image prune -f
+docker compose run --rm migrate </dev/null
+docker compose up -d --no-build --wait --remove-orphans </dev/null
+docker compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile </dev/null
+docker image prune -f </dev/null
 EOF
     ;;
   reset)
@@ -41,12 +43,12 @@ EOF
 set -euo pipefail
 cd $APP_DIR
 # La API se detiene para que nadie escriba mientras se borran las tablas (~30 s sin servicio).
-docker compose stop api
-docker compose run --rm migrate alembic downgrade base
-docker compose run --rm migrate
+docker compose stop api </dev/null
+docker compose run --rm migrate alembic downgrade base </dev/null
+docker compose run --rm migrate </dev/null
 # Sesiones, leases de pestaña y bloqueos de login viven en Redis.
-docker compose exec -T redis redis-cli FLUSHALL
-docker compose up -d --no-build --wait
+docker compose exec -T redis redis-cli FLUSHALL </dev/null
+docker compose up -d --no-build --wait </dev/null
 EOF
     ;;
   *)
