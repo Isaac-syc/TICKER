@@ -1,0 +1,60 @@
+# Overlay de desarrollo: recarga en caliente del back y del front, puertos de BD/Redis expuestos
+# y una BD extra `helpdesk_test` para las pruebas de API.
+#   docker compose -f compose.yaml -f compose.dev.yaml up --build
+services:
+  db:
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./infra/postgres/init-test-db.sh:/docker-entrypoint-initdb.d/init-test-db.sh:ro
+
+  redis:
+    ports:
+      - "6379:6379"
+
+  migrate:
+    image: helpdesk/api:dev
+    build:
+      context: ./backend
+      target: dev
+    command: ["migrate"]
+
+  api:
+    image: helpdesk/api:dev
+    build:
+      context: ./backend
+      target: dev
+    command: ["api-dev"]
+    environment:
+      LOG_JSON: "false"
+      TEST_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/helpdesk_test
+      TEST_REDIS_URL: redis://redis:6379/15
+    volumes:
+      - ./backend/src:/app/src
+      - ./backend/tests:/app/tests
+      - ./backend/migrations:/app/migrations
+    ports:
+      - "8000:8000"
+
+  web:
+    image: helpdesk/web:dev
+    build:
+      context: ./frontend
+      target: dev
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/.next
+    environment:
+      WATCHPACK_POLLING: "true"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/login"]
+      interval: 10s
+      timeout: 5s
+      start_period: 60s
+      retries: 10
+
+  proxy:
+    environment:
+      # next dev necesita eval para el HMR
+      CSP_SCRIPT_SRC: "'self' 'unsafe-inline' 'unsafe-eval'"

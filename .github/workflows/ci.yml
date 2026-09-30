@@ -1,0 +1,150 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: Backend (lint, tipos, arquitectura, pruebas)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: helpdesk_test
+          POSTGRES_USER: helpdesk
+          POSTGRES_PASSWORD: helpdesk
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U helpdesk -d helpdesk_test"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: --health-cmd "redis-cli ping" --health-interval 5s --health-retries 20
+    env:
+      TEST_DATABASE_URL: postgresql+asyncpg://helpdesk:helpdesk@localhost:5432/helpdesk_test
+      TEST_REDIS_URL: redis://localhost:6379/15
+      DATABASE_URL: postgresql+asyncpg://helpdesk:helpdesk@localhost:5432/helpdesk_test
+      JWT_SECRET: ci-only-secret-0123456789abcdef0123456789
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv sync --locked
+      - name: Ruff (lint + formato)
+        run: uv run ruff check . && uv run ruff format --check .
+      - name: mypy (strict)
+        run: uv run mypy
+      - name: Contratos de arquitectura hexagonal
+        run: uv run lint-imports
+      - name: Pruebas (unitarias + API con Postgres/Redis reales)
+        run: uv run pytest --cov --cov-report=term --cov-report=xml --cov-fail-under=80
+      - name: Sin drift entre modelos y migraciones
+        run: uv run alembic upgrade head && uv run alembic check
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: backend-coverage
+          path: backend/coverage.xml
+
+  frontend:
+    name: Frontend (lint, tipos, pruebas, build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+
+  e2e:
+    name: E2E (stack completo en Docker + Playwright)
+    runs-on: ubuntu-latest
+    needs: [backend, frontend]
+    steps:
+      - uses: actions/checkout@v5
+      - run: cp .env.example .env
+      - uses: docker/setup-buildx-action@v3
+      - name: Levantar stack
+        run: docker compose up --build --wait --wait-timeout 300
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - working-directory: frontend
+        run: npm ci && npx playwright install --with-deps chromium
+      - working-directory: frontend
+        run: npx playwright test
+      - name: Logs del stack (si falla)
+        if: failure()
+        run: docker compose logs --no-color > compose-logs.txt
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: e2e-report
+          path: |
+            frontend/playwright-report
+            compose-logs.txt
+
+  security:
+    name: Seguridad (secretos, dependencias, imágenes)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: Secretos filtrados (gitleaks)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - uses: astral-sh/setup-uv@v6
+      - name: Vulnerabilidades Python (pip-audit)
+        working-directory: backend
+        run: uv export --no-dev --format requirements-txt > /tmp/req.txt && uvx pip-audit -r /tmp/req.txt
+      - name: Vulnerabilidades npm
+        working-directory: frontend
+        run: npm audit --omit=dev --audit-level=high
+      - name: Construir imágenes
+        run: |
+          docker build -t helpdesk/api:scan --target runtime backend
+          docker build -t helpdesk/web:scan --target runtime frontend
+      - name: Trivy (imágenes)
+        uses: aquasecurity/trivy-action@0.33.1
+        with:
+          scan-type: image
+          image-ref: helpdesk/api:scan
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "1"
+      - name: Trivy (imagen web)
+        uses: aquasecurity/trivy-action@0.33.1
+        with:
+          scan-type: image
+          image-ref: helpdesk/web:scan
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "1"

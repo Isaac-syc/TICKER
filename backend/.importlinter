@@ -1,0 +1,42 @@
+[importlinter]
+root_package = helpdesk
+exclude_type_checking_imports = true
+include_external_packages = true
+
+# Arquitectura hexagonal: las dependencias solo apuntan hacia adentro.
+# main (arranque) -> container (composition root) -> adapters -> application -> domain
+[importlinter:contract:layers]
+name = Capas hexagonales
+type = layers
+layers =
+    helpdesk.main
+    helpdesk.container
+    helpdesk.adapters
+    helpdesk.application
+    helpdesk.domain
+
+[importlinter:contract:inbound-outbound]
+name = Los adaptadores de salida no dependen de los de entrada
+type = forbidden
+source_modules =
+    helpdesk.adapters.outbound
+forbidden_modules =
+    helpdesk.adapters.inbound
+
+[importlinter:contract:core-pure]
+name = Dominio y aplicación no dependen de frameworks ni de infraestructura
+type = forbidden
+source_modules =
+    helpdesk.domain
+    helpdesk.application
+forbidden_modules =
+    fastapi
+    starlette
+    sqlalchemy
+    redis
+    jwt
+    pwdlib
+    structlog
+    pydantic
+    pydantic_settings
+    helpdesk.config

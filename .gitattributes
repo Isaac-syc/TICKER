@@ -1,0 +1,8 @@
+# Forzamos LF para que los scripts y Dockerfiles funcionen dentro de los contenedores Linux
+# aunque el repo se clone en Windows.
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.ico binary
+*.woff2 binary
