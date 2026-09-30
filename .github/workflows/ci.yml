@@ -133,7 +133,7 @@ jobs:
           docker build -t helpdesk/api:scan --target runtime backend
           docker build -t helpdesk/web:scan --target runtime frontend
       - name: Trivy (imágenes)
-        uses: aquasecurity/trivy-action@0.33.1
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: image
           image-ref: helpdesk/api:scan
@@ -141,7 +141,7 @@ jobs:
           ignore-unfixed: true
           exit-code: "1"
       - name: Trivy (imagen web)
-        uses: aquasecurity/trivy-action@0.33.1
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: image
           image-ref: helpdesk/web:scan
