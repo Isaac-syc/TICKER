@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 # ---------- base ----------
-FROM python:3.13-slim AS base
+FROM python:3.14-slim AS base
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 WORKDIR /app
