@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 # ---------- deps: instalación reproducible (capa cacheable) ----------
-FROM node:24-alpine AS deps
+FROM node:26-alpine AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN --mount=type=cache,target=/root/.npm npm ci --no-audit --no-fund
@@ -19,7 +19,7 @@ COPY . .
 RUN npm run build
 
 # ---------- runtime: solo el servidor standalone ----------
-FROM node:24-alpine AS runtime
+FROM node:26-alpine AS runtime
 WORKDIR /app
 ENV NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1 \
