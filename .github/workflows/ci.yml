@@ -87,7 +87,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - run: cp .env.example .env
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v4
       - name: Levantar stack
         run: docker compose up --build --wait --wait-timeout 300
       - uses: actions/setup-node@v5
